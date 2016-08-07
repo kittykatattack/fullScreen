@@ -8,10 +8,10 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 //implementations. Here's a fix for it, thanks to Norman Paschke:
 
 (function (doc) {
-  // Use JavaScript script mode
+  // Use JavaScript strict mode
   "use strict"
 
-  /*global Element */
+  /*global Element, Promise */
 
   ;
   var pollute = true,
@@ -30,10 +30,10 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
       }
     },
     webkit: {
-      enabled: "webkitIsFullScreen",
+      enabled: "webkitFullscreenEnabled",
       element: "webkitCurrentFullScreenElement",
-      request: "webkitRequestFullScreen",
-      exit: "webkitCancelFullScreen",
+      request: "webkitRequestFullscreen",
+      exit: "webkitExitFullscreen",
       events: {
         change: "webkitfullscreenchange",
         error: "webkitfullscreenerror"
@@ -80,6 +80,9 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
   } // end of dispatch()
 
   function handleChange(e) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
     // Recopy the enabled and element values
     doc[w3.enabled] = doc[api.enabled];
     doc[w3.element] = doc[api.element];
@@ -90,6 +93,35 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
   function handleError(e) {
     dispatch(w3.events.error, e.target);
   } // end of handleError()
+
+  // Prepare a resolver to use for the requestFullscreen and exitFullscreen's promises
+  // Use a closure since we need to check which method was used
+  function createResolver(method) {
+    return function resolver(resolve, reject) {
+      // Reject the promise if asked to exitFullscreen and there is no element currently in fullscreen
+      if (method === w3.exit && !doc[api.element]) {
+        setTimeout(function () {
+          reject(new TypeError());
+        }, 1);
+        return;
+      }
+
+      // When receiving an internal fullscreenchange event, fulfill the promise
+      function change() {
+        resolve();
+        doc.removeEventListener(api.events.change, change, false);
+      }
+
+      // When receiving an internal fullscreenerror event, reject the promise
+      function error() {
+        reject(new TypeError());
+        doc.removeEventListener(api.events.error, error, false);
+      }
+
+      doc.addEventListener(api.events.change, change, false);
+      doc.addEventListener(api.events.error, error, false);
+    };
+  }
 
   // Pollute only if the API doesn't already exists
   if (pollute && !(w3.enabled in doc) && api) {
@@ -102,11 +134,15 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
     doc[w3.element] = doc[api.element];
 
     // Match the reference for exitFullscreen
-    doc[w3.exit] = doc[api.exit];
+    doc[w3.exit] = function () {
+      var result = doc[api.exit]();
+      return !result && window.Promise ? new Promise(createResolver(w3.exit)) : result;
+    };
 
     // Add the request method to the Element's prototype
     Element.prototype[w3.request] = function () {
-      return this[api.request].apply(this, arguments);
+      var result = this[api.request].apply(this, arguments);
+      return !result && window.Promise ? new Promise(createResolver(w3.request)) : result;
     };
   }
 
@@ -122,7 +158,7 @@ var FullScreen = (function () {
     _classCallCheck(this, FullScreen);
 
     this.element = element;
-    this.fullScreenScale = 1;
+    this.fullscreenScale = 1;
   }
 
   //`requestFullScreen` is used by `enableFullScreen` to launch
@@ -132,7 +168,8 @@ var FullScreen = (function () {
     key: "requestFullScreen",
     value: function requestFullScreen() {
       if (!document.fullscreenEnabled) {
-        console.log(this.element);
+        //console.log("requestFullscreen")
+        //if (this.fullScreenScale !== 1) {
         this.element.requestFullscreen();
       }
     }
@@ -143,6 +180,7 @@ var FullScreen = (function () {
     //fullscreen mode.
     value: function exitFullScreen() {
       if (document.fullscreenEnabled) {
+        //if (this.fullScreenScale !== 1) {
         document.exitFullscreen();
       }
     }
@@ -164,7 +202,7 @@ var FullScreen = (function () {
       scaleY = screen.height / this.element.height;
 
       //Set the scale based on whichever value is less: `scaleX` or `scaleY`.
-      this.fullScreenScale = Math.min(scaleX, scaleY);
+      this.fullscreenScale = Math.min(scaleX, scaleY);
 
       //To center the element we need to inject some CSS
       //and into the HTML document's `<style>` tag. Some

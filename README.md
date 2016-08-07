@@ -1,3 +1,5 @@
+**WARNING: This code is now deprecated and should not be used!**
+
 FullScreen
 ==========
 
